@@ -14,19 +14,37 @@ class APIClient:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
 
+    @staticmethod
+    def _is_retryable(exception: requests.RequestException) -> bool:
+        if isinstance(exception, (requests.Timeout, requests.ConnectionError)):
+            return True
+        if hasattr(exception, "response") and exception.response is not None:
+            return exception.response.status_code in (429, 500, 502, 503, 504)
+        return False
+
     def fetch(
         self, url: str, params: Optional[dict[str, Any]] = None
-    ) -> dict[str, Any]:
+    ) -> tuple[Any, int]:
+        """Fetch data from API with retry logic.
+
+        Returns:
+            Tuple of (response_data, http_status_code)
+        """
         for attempt in range(self.max_retries):
             try:
                 response = requests.get(url, params=params, timeout=30)
                 response.raise_for_status()
-                result: dict[str, Any] = response.json()
-                return result
+                return response.json(), response.status_code
             except requests.RequestException as e:
-                logger.warning(f"Attempt {attempt + 1} failed: {e}")
-                if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay * (attempt + 1))
+                logger.warning(
+                    "Attempt %d/%d failed: %s",
+                    attempt + 1,
+                    self.max_retries,
+                    e,
+                )
+                if attempt < self.max_retries - 1 and self._is_retryable(e):
+                    delay = self.retry_delay * (2**attempt)
+                    logger.info("Retrying in %.1fs...", delay)
+                    time.sleep(delay)
                 else:
                     raise
-        raise RuntimeError("Max retries exceeded")

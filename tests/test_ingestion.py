@@ -31,28 +31,36 @@ class TestAPIClient:
         """Test successful API fetch"""
         mock_response = MagicMock()
         mock_response.json.return_value = {"data": "test"}
+        mock_response.status_code = 200
         mock_response.raise_for_status = MagicMock()
         mock_get.return_value = mock_response
 
         client = APIClient()
-        result = client.fetch("http://test.com/api")
+        data, status_code = client.fetch("http://test.com/api")
 
-        assert result == {"data": "test"}
+        assert data == {"data": "test"}
+        assert status_code == 200
         mock_get.assert_called_once()
 
     @patch("src.ingestion.api_client.requests.get")
     def test_fetch_retry_on_failure(self, mock_get):
         """Test retry logic on failure"""
+        mock_success = MagicMock()
+        mock_success.json.return_value = {"data": "success"}
+        mock_success.status_code = 200
+        mock_success.raise_for_status = MagicMock()
+
         mock_get.side_effect = [
-            requests.RequestException("Connection error"),
-            requests.RequestException("Connection error"),
-            MagicMock(json=lambda: {"data": "success"}, raise_for_status=lambda: None),
+            requests.ConnectionError("Connection error"),
+            requests.ConnectionError("Connection error"),
+            mock_success,
         ]
 
-        client = APIClient(max_retries=3, retry_delay=0.1)
-        result = client.fetch("http://test.com/api")
+        client = APIClient(max_retries=3, retry_delay=0.01)
+        data, status_code = client.fetch("http://test.com/api")
 
-        assert result == {"data": "success"}
+        assert data == {"data": "success"}
+        assert status_code == 200
         assert mock_get.call_count == 3
 
 
@@ -64,7 +72,10 @@ class TestIngestionFunctions:
     def test_ingest_gdp_returns_batch_id(self, mock_engine, mock_client):
         """Test GDP ingestion returns a batch ID"""
         mock_client_instance = MagicMock()
-        mock_client_instance.fetch.return_value = [{"date": "2024-01", "value": 100}]
+        mock_client_instance.fetch.return_value = (
+            [{"date": "2024-01", "value": 100}],
+            200,
+        )
         mock_client.return_value = mock_client_instance
 
         mock_conn = MagicMock()
@@ -144,10 +155,13 @@ class TestDatabaseIntegration:
         """Test GDP ingestion with real database (mocked API)."""
         # Mock the API call but use real database
         mock_client_instance = MagicMock()
-        mock_client_instance.fetch.return_value = [
-            {"date": "2024-Q1", "value": 1000.5},
-            {"date": "2024-Q2", "value": 1020.3},
-        ]
+        mock_client_instance.fetch.return_value = (
+            [
+                {"date": "2024-Q1", "value": 1000.5},
+                {"date": "2024-Q2", "value": 1020.3},
+            ],
+            200,
+        )
         mock_client.return_value = mock_client_instance
         mock_get_engine.return_value = get_test_engine()
 

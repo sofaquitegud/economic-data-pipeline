@@ -42,4 +42,5 @@ datagovmy_de_project.md
 airflow/logs/*
 !airflow/logs/.gitkeep
 .envrc
-AGENT.md
+CLAUDE.md
+.claude

@@ -1,10 +1,13 @@
 """Data quality validation checks"""
 
 # Import libraries
-from typing import Optional
+from typing import Any, Optional, Type
 
 import pandas as pd
+from pydantic import BaseModel, ValidationError
 
+from config.schema import (CPIRecord, ExchangeRateRecord, GDPRecord,
+                           PopulationRecord)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -73,6 +76,48 @@ class DataQualityValidator:
             passed = False
         return passed
 
+    def check_schema(
+        self,
+        model_class: Type[BaseModel],
+        column_mapping: Optional[dict[str, str]] = None,
+    ) -> bool:
+        """Validate rows against a Pydantic model.
+
+        Only validates fields present in both the DataFrame
+        and the model. Extra/missing columns are ignored.
+        """
+        df = self.df
+        if column_mapping:
+            df = df.rename(columns=column_mapping)
+
+        model_fields = set(model_class.model_fields.keys())
+        available = model_fields & set(df.columns)
+        if not available:
+            return True
+
+        error_count = 0
+        sample = df.head(100)
+
+        for _, row in sample.iterrows():
+            row_dict: dict[str, Any] = {
+                k: v for k, v in row.items() if k in model_fields
+            }
+            try:
+                model_class.model_validate(row_dict)
+            except ValidationError as e:
+                for err in e.errors():
+                    loc = err["loc"][0] if err["loc"] else None
+                    if loc in available:
+                        error_count += 1
+
+        if error_count > 0:
+            self.issues.append(
+                f"Schema validation: {error_count} field error(s) "
+                f"in {len(sample)} rows"
+            )
+            return False
+        return True
+
     def check_row_count(self, min_rows: int) -> bool:
         """Check if dataset has minimum required rows"""
         if len(self.df) < min_rows:
@@ -101,12 +146,18 @@ class DataQualityValidator:
 
 
 # Pre-built validators for each dataset
+
+
 def validate_gdp(df: pd.DataFrame) -> dict[str, object]:
     v = DataQualityValidator(df, "GDP")
     v.check_nulls(["trend_date", "gdp_value"])
     v.check_duplicates(["trend_date"])
     v.check_value_range("gdp_value", min_val=0)
     v.check_row_count(min_rows=10)
+    v.check_schema(
+        GDPRecord,
+        column_mapping={"trend_date": "date", "gdp_value": "value"},
+    )
     return v.report()
 
 
@@ -115,13 +166,15 @@ def validate_cpi(df: pd.DataFrame) -> dict[str, object]:
     v.check_nulls(["date", "value", "category"], threshold=0.10)
     v.check_duplicates(["date", "category"])
     v.check_value_range("value", min_val=0)
+    v.check_schema(CPIRecord)
     return v.report()
 
 
 def validate_labour(df: pd.DataFrame) -> dict[str, object]:
+    """Labour gold layer is pivoted — no matching Pydantic model."""
     v = DataQualityValidator(df, "Labour")
-    v.check_nulls(["date", "metric", "value"])
-    v.check_duplicates(["date", "metric"])
+    v.check_nulls(["date"])
+    v.check_duplicates(["date"])
     return v.report()
 
 
@@ -130,11 +183,16 @@ def validate_exchange_rates(df: pd.DataFrame) -> dict[str, object]:
     v.check_nulls(["date", "currency_code", "rate"])
     v.check_duplicates(["date", "currency_code"])
     v.check_value_range("rate", min_val=0)
+    v.check_schema(ExchangeRateRecord)
     return v.report()
 
 
 def validate_population(df: pd.DataFrame) -> dict[str, object]:
     v = DataQualityValidator(df, "Population")
-    v.check_nulls(["date", "population"])
-    v.check_value_range("population", min_val=0)
+    v.check_nulls(["date", "total_population"])
+    v.check_value_range("total_population", min_val=0)
+    v.check_schema(
+        PopulationRecord,
+        column_mapping={"total_population": "count"},
+    )
     return v.report()
