@@ -1,9 +1,12 @@
 """Unit tests for ingestion modules"""
 
 # Import libraries
+import os
 from unittest.mock import MagicMock, patch
 
+import pytest
 import requests
+from sqlalchemy import create_engine, text
 
 from src.ingestion.api_client import APIClient
 
@@ -83,11 +86,6 @@ class TestIngestionFunctions:
 # ============================================================================
 # Integration Tests - Test against real database
 # ============================================================================
-
-import os
-
-import pytest
-from sqlalchemy import create_engine, text
 
 
 def get_test_engine():
