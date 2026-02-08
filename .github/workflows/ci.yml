@@ -88,20 +88,6 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:14
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: malaysia_data_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
 
     steps:
       - name: Checkout code
@@ -119,15 +105,9 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
-      - name: Setup database schema
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h localhost -U postgres -d malaysia_data_test -f sql/ddl/01_bronze_schema.sql
-
       - name: Run integration tests
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/malaysia_data_test
+          DATABASE_URL: postgresql://${{ secrets.POSTGRES_USER }}:${{ secrets.POSTGRES_PASSWORD }}@${{ secrets.POSTGRES_HOST }}:${{ secrets.POSTGRES_PORT }}/${{ secrets.POSTGRES_DB }}
         run: |
           PYTHONPATH=. pytest tests/ -v -m integration || echo "No integration tests found"
 
