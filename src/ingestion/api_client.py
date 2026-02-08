@@ -48,3 +48,4 @@ class APIClient:
                     time.sleep(delay)
                 else:
                     raise
+        raise RuntimeError("max_retries must be > 0")

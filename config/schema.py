@@ -1,6 +1,6 @@
 # Import libraries
 from datetime import date
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, validator
 
@@ -22,7 +22,7 @@ class GDPRecord(BaseEconomicRecord):
     value: float = Field(description="GDP value in RM millions or percentage")
 
     @validator("value")
-    def validate_gdp_value(cls, v, values):
+    def validate_gdp_value(cls, v: float, values: dict[str, Any]) -> float:
         if values.get("series") == "abs" and v < 0:
             raise ValueError("Absolute GDP cannot be negative")
         return v

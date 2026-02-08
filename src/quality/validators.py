@@ -104,7 +104,7 @@ class DataQualityValidator:
 
         for _, row in sample.iterrows():
             row_dict: dict[str, Any] = {
-                k: v for k, v in row.items() if k in model_fields
+                str(k): v for k, v in row.items() if k in model_fields
             }
             try:
                 model_class.model_validate(row_dict)
