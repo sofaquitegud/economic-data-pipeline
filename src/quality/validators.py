@@ -6,8 +6,12 @@ from typing import Any, Optional, Type
 import pandas as pd
 from pydantic import BaseModel, ValidationError
 
-from config.schema import (CPIRecord, ExchangeRateRecord, GDPRecord,
-                           PopulationRecord)
+from config.schema import (
+    CPIRecord,
+    ExchangeRateRecord,
+    GDPRecord,
+    PopulationRecord,
+)
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
