@@ -28,9 +28,9 @@ jobs:
           import requests
           from config.api_endpoints import ENDPOINTS
 
-          for name, config in ENDPOINTS.items():
+          for name, url in ENDPOINTS.items():
               try:
-                  response = requests.get(config['url'])
+                  response = requests.get(url)
                   print(f'{name}: Status {response.status_code}')
                   if response.status_code == 200:
                       print(f'  Data preview: {len(response.text)} characters')
