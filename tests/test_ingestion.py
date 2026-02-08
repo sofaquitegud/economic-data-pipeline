@@ -84,58 +84,43 @@ class TestIngestionFunctions:
 # Integration Tests - Test against real database
 # ============================================================================
 
+import os
 
+import pytest
+from sqlalchemy import create_engine, text
+
+
+def get_test_engine():
+    """Get database engine for integration tests."""
+    db_url = os.getenv(
+        "DATABASE_URL",
+        "postgresql://postgres:postgres@localhost:5432/malaysia_data_test",
+    )
+    return create_engine(db_url)
+
+
+@pytest.mark.integration
 class TestDatabaseIntegration:
-    """Integration tests that require a real database connection"""
-
-    @staticmethod
-    def _get_test_engine():
-        """Get database engine for integration tests"""
-        import os
-        from sqlalchemy import create_engine
-
-        # Use DATABASE_URL from environment, fallback to localhost
-        db_url = os.getenv(
-            "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/malaysia_data_test"
-        )
-        return create_engine(db_url)
+    """Integration tests that require a real database connection."""
 
     def test_database_connection(self):
-        """Test that database connection is working"""
-        import pytest
-
-        pytest.importorskip("pytest")  # Skip if pytest not available
-        pytest.mark.integration  # Mark as integration test
-
-        engine = self._get_test_engine()
+        """Test that database connection is working."""
+        engine = get_test_engine()
         with engine.connect() as conn:
-            result = conn.execute("SELECT 1 as test")
+            result = conn.execute(text("SELECT 1 as test"))
             row = result.fetchone()
             assert row[0] == 1
 
-    test_database_connection = staticmethod(
-        __import__("pytest").mark.integration(test_database_connection)
-    )
-
     def test_bronze_schema_exists(self):
-        """Test that bronze schema and tables exist"""
-        import pytest
-        from sqlalchemy import text
-
-        pytest.importorskip("pytest")
-
-        engine = self._get_test_engine()
+        """Test that bronze schema and tables exist."""
+        engine = get_test_engine()
         with engine.connect() as conn:
             # Check if bronze schema exists
-            result = conn.execute(
-                text(
-                    """
-                SELECT schema_name 
-                FROM information_schema.schemata 
-                WHERE schema_name = 'bronze'
-            """
-                )
-            )
+            result = conn.execute(text("""
+                    SELECT schema_name
+                    FROM information_schema.schemata
+                    WHERE schema_name = 'bronze'
+                    """))
             assert result.fetchone() is not None, "Bronze schema does not exist"
 
             # Check if required tables exist
@@ -147,30 +132,18 @@ class TestDatabaseIntegration:
                 "population_raw",
             ]
             for table in required_tables:
-                result = conn.execute(
-                    text(
-                        f"""
-                    SELECT table_name 
-                    FROM information_schema.tables 
-                    WHERE table_schema = 'bronze' 
-                    AND table_name = '{table}'
-                """
-                    )
-                )
+                result = conn.execute(text(f"""
+                        SELECT table_name
+                        FROM information_schema.tables
+                        WHERE table_schema = 'bronze'
+                        AND table_name = '{table}'
+                        """))
                 assert result.fetchone() is not None, f"Table {table} does not exist"
 
-    test_bronze_schema_exists = staticmethod(
-        __import__("pytest").mark.integration(test_bronze_schema_exists)
-    )
-
     @patch("src.ingestion.gdp_ingestion.APIClient")
-    def test_gdp_ingestion_with_real_db(self, mock_client):
-        """Test GDP ingestion with real database (mocked API)"""
-        import pytest
-        from sqlalchemy import text
-
-        pytest.importorskip("pytest")
-
+    @patch("src.ingestion.gdp_ingestion.get_engine")
+    def test_gdp_ingestion_with_real_db(self, mock_get_engine, mock_client):
+        """Test GDP ingestion with real database (mocked API)."""
         # Mock the API call but use real database
         mock_client_instance = MagicMock()
         mock_client_instance.fetch.return_value = [
@@ -178,40 +151,32 @@ class TestDatabaseIntegration:
             {"date": "2024-Q2", "value": 1020.3},
         ]
         mock_client.return_value = mock_client_instance
+        mock_get_engine.return_value = get_test_engine()
 
-        # Patch get_engine to use test database
-        with patch("src.ingestion.gdp_ingestion.get_engine", self._get_test_engine):
-            from src.ingestion.gdp_ingestion import ingest_gdp_data
+        from src.ingestion.gdp_ingestion import ingest_gdp_data
 
-            batch_id = ingest_gdp_data()
+        batch_id = ingest_gdp_data()
 
-            # Verify data was inserted
-            engine = self._get_test_engine()
-            with engine.connect() as conn:
-                result = conn.execute(
-                    text(
-                        """
-                    SELECT ingestion_batch_id, row_count, response_status 
-                    FROM bronze.gdp_raw 
+        # Verify data was inserted
+        engine = get_test_engine()
+        with engine.connect() as conn:
+            result = conn.execute(
+                text("""
+                    SELECT ingestion_batch_id, row_count, response_status
+                    FROM bronze.gdp_raw
                     WHERE ingestion_batch_id = :batch_id
-                """
-                    ),
-                    {"batch_id": batch_id},
-                )
-                row = result.fetchone()
-                assert row is not None, "No data found in database"
-                assert str(row[0]) == batch_id
-                assert row[1] == 2  # row_count should be 2
-                assert row[2] == 200  # status should be 200
+                    """),
+                {"batch_id": batch_id},
+            )
+            row = result.fetchone()
+            assert row is not None, "No data found in database"
+            assert str(row[0]) == batch_id
+            assert row[1] == 2  # row_count should be 2
+            assert row[2] == 200  # status should be 200
 
-                # Clean up test data
-                conn.execute(
-                    text("DELETE FROM bronze.gdp_raw WHERE ingestion_batch_id = :batch_id"),
-                    {"batch_id": batch_id},
-                )
-                conn.commit()
-
-    test_gdp_ingestion_with_real_db = staticmethod(
-        __import__("pytest").mark.integration(test_gdp_ingestion_with_real_db)
-    )
-
+            # Clean up test data
+            conn.execute(
+                text("DELETE FROM bronze.gdp_raw WHERE ingestion_batch_id = :batch_id"),
+                {"batch_id": batch_id},
+            )
+            conn.commit()
